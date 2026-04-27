@@ -55,6 +55,8 @@ public class App {
         String modelPath = FaceRecUtils.MODAL_PATH;
         File retinaface = new File(modelPath + "retinaface.pt");
         File elasticface = new File(modelPath + "elasticface.pt");
+        File iicFl = new File(modelPath + "IIC_Fl.onnx");
+        File frExpression = new File(modelPath + "fr_expression.onnx");
         
         boolean hasError = false;
         
@@ -69,13 +71,26 @@ public class App {
             System.err.println("   路径：" + elasticface.getAbsolutePath());
             hasError = true;
         }
+
+        if (!iicFl.exists()) {
+            System.err.println("❌ 错误：找不到模型文件 IIC_Fl.onnx（活体检测）");
+            System.err.println("   路径：" + iicFl.getAbsolutePath());
+            hasError = true;
+        }
+
+        if (!frExpression.exists()) {
+            System.err.println("❌ 错误：找不到模型文件 fr_expression.onnx（表情检测）");
+            System.err.println("   路径：" + frExpression.getAbsolutePath());
+            hasError = true;
+        }
         
         if (hasError) {
             System.err.println("\n⚠️  请按以下步骤操作：");
-            System.err.println("1. 下载模型文件（约355MB）");
+            System.err.println("1. 下载模型文件（包含人脸识别、活体检测、表情检测）");
             System.err.println("   百度网盘：https://pan.baidu.com/s/10l22x5fRz_gwLr8EAHa1Jg?pwd=1234");
             System.err.println("   提取码：1234");
             System.err.println("2. 将模型文件放到目录：" + new File(modelPath).getAbsolutePath());
+            System.err.println("   需要文件：retinaface.pt、elasticface.pt、IIC_Fl.onnx、fr_expression.onnx");
             System.err.println("3. 或修改 FaceRecUtils.java 中的 MODAL_PATH 配置为你的模型目录");
             System.err.println("\n按任意键继续（可能会报错）或 Ctrl+C 退出...\n");
             
@@ -87,6 +102,8 @@ public class App {
             System.out.println("✅ 模型文件检查通过");
             System.out.println("   - retinaface.pt: " + retinaface.getAbsolutePath());
             System.out.println("   - elasticface.pt: " + elasticface.getAbsolutePath());
+            System.out.println("   - IIC_Fl.onnx: " + iicFl.getAbsolutePath());
+            System.out.println("   - fr_expression.onnx: " + frExpression.getAbsolutePath());
             System.out.println();
         }
     }

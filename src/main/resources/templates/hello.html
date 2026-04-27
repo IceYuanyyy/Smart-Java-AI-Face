@@ -317,7 +317,7 @@
 
     <div class="instructions">
         <p>请正对摄像头，保持面部清晰</p>
-        <p>系统将先进行活体检测，通过后自动识别</p>
+        <p>系统将先进行活体检测和高兴表情检测，通过后自动识别</p>
     </div>
 
     <!-- 管理中心入口 -->
@@ -409,9 +409,48 @@
                             return;
                         }
 
-                        // 活體通過，進行人臉識別
-                        status.textContent = '活體通過，識別中...';
+                        // 第二步：表情檢測（必須 happy / 高兴）
+                        status.textContent = '活體通過，檢測表情中...';
+                        return fetch('/face/expression', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ base64Image: base64Image })
+                        });
+                    })
+                    .then(response => {
+                        if (!response) return;  // 活體未通過時 response 為 undefined
+                        return response.json();
+                    })
+                    .then(expressionResult => {
+                        if (!expressionResult) return;
+                        if (expressionResult.code !== 200 || !expressionResult.data) {
+                            status.textContent = '表情檢測失敗: ' + (expressionResult.message || '未知錯誤');
+                            status.classList.add('warning');
+                            status.classList.remove('success');
+                            isProcessing = false;
+                            return;
+                        }
 
+                        const exp = expressionResult.data;
+                        if (!exp.faceDetected) {
+                            status.textContent = '未檢測到人臉，請正對攝像頭';
+                            status.classList.add('warning');
+                            status.classList.remove('success');
+                            isProcessing = false;
+                            return;
+                        }
+
+                        const isHappy = exp.expressionLabel === 'happy' || exp.expressionDescription === '高兴';
+                        if (!isHappy) {
+                            status.textContent = '請露出笑容（目前表情: ' + (exp.expressionDescription || exp.expressionLabel || '未知') + ')';
+                            status.classList.add('warning');
+                            status.classList.remove('success');
+                            isProcessing = false;
+                            return;
+                        }
+
+                        // 活體 + 高兴通過，進行人臉識別
+                        status.textContent = '活體與表情通過，識別中...';
                         return fetch('/getInfoByFace', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -419,7 +458,7 @@
                         });
                     })
                     .then(response => {
-                        if (!response) return;  // 活體未通過時 response 為 undefined
+                        if (!response) return;
                         return response.json();
                     })
                     .then(result => {

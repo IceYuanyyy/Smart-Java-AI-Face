@@ -8,6 +8,7 @@ import cn.smartjavaai.common.entity.DetectionRectangle;
 import cn.smartjavaai.common.entity.DetectionResponse;
 import cn.smartjavaai.common.entity.R;
 import cn.smartjavaai.common.entity.face.FaceSearchResult;
+import cn.smartjavaai.common.entity.face.ExpressionResult;
 import cn.smartjavaai.common.enums.DeviceEnum;
 import cn.smartjavaai.common.enums.SimilarityType;
 import cn.smartjavaai.common.enums.face.LivenessStatus;
@@ -15,6 +16,7 @@ import cn.smartjavaai.common.utils.ImageUtils;
 import cn.smartjavaai.face.config.FaceDetConfig;
 import cn.smartjavaai.face.config.FaceRecConfig;
 import cn.smartjavaai.face.config.LivenessConfig;
+import cn.smartjavaai.face.config.FaceExpressionConfig;
 import cn.smartjavaai.face.constant.FaceDetectConstant;
 import cn.smartjavaai.face.constant.LivenessConstant;
 import cn.smartjavaai.face.entity.FaceRegisterInfo;
@@ -22,13 +24,17 @@ import cn.smartjavaai.face.entity.FaceSearchParams;
 import cn.smartjavaai.face.enums.FaceDetModelEnum;
 import cn.smartjavaai.face.enums.FaceRecModelEnum;
 import cn.smartjavaai.face.enums.LivenessModelEnum;
+import cn.smartjavaai.face.enums.ExpressionModelEnum;
 import cn.smartjavaai.face.factory.FaceDetModelFactory;
 import cn.smartjavaai.face.factory.FaceRecModelFactory;
 import cn.smartjavaai.face.factory.LivenessModelFactory;
+import cn.smartjavaai.face.factory.ExpressionModelFactory;
 import cn.smartjavaai.face.model.facedect.FaceDetModel;
 import cn.smartjavaai.face.model.facerec.FaceRecModel;
 import cn.smartjavaai.face.model.liveness.LivenessDetModel;
+import cn.smartjavaai.face.model.expression.ExpressionModel;
 import cn.smartjavaai.face.vector.config.SQLiteConfig;
+import com.codeying.entity.ExpressionDetectResult;
 import com.codeying.entity.LivenessDetectResult;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -362,6 +368,25 @@ public class FaceRecUtils {
         return staticLivenessDetModel;
     }
 
+    private static ExpressionModel staticExpressionModel = null;
+
+    /**
+     * 获取表情识别模型（静态缓存，供 API 使用）
+     */
+    public static ExpressionModel getStaticExpressionModel() {
+        if (staticExpressionModel != null) {
+            return staticExpressionModel;
+        }
+        FaceExpressionConfig config = new FaceExpressionConfig();
+        config.setModelEnum(ExpressionModelEnum.FrEmotion);
+        config.setModelPath(MODAL_PATH + "fr_expression.onnx");
+        config.setDevice(device);
+        config.setAlign(true);
+        config.setDetectModel(getProFaceDetModel());
+        staticExpressionModel = ExpressionModelFactory.getInstance().getModel(config);
+        return staticExpressionModel;
+    }
+
     /**
      * 單張圖片活體檢測（供 API 調用）
      * @param image 人臉圖片
@@ -398,6 +423,43 @@ public class FaceRecUtils {
         } catch (Exception e) {
             log.error("活體檢測異常", e);
             return new LivenessDetectResult(false, 0f, "檢測異常: " + e.getMessage(), false);
+        }
+    }
+
+    /**
+     * 单张图片表情检测（供 API 调用）
+     * @param image 人脸图片
+     * @return 表情检测结果，若未检测到人脸或失败则 faceDetected 为 false
+     */
+    public static ExpressionDetectResult expressionDetect(BufferedImage image) {
+        if (image == null) {
+            return new ExpressionDetectResult(false, null, "图片为空", 0f);
+        }
+        try {
+            ExpressionModel model = getStaticExpressionModel();
+            Mat mat = bufferedImageToMat(image);
+            if (mat == null || mat.empty()) {
+                return new ExpressionDetectResult(false, null, "图片转换失败", 0f);
+            }
+            Image img = SmartImageFactory.getInstance().fromMat(mat);
+            R<ExpressionResult> result = model.detectTopFace(img);
+            if (!result.isSuccess()) {
+                log.debug("表情检测失败：{}", result.getMessage());
+                return new ExpressionDetectResult(false, null, result.getMessage(), 0f);
+            }
+            ExpressionResult expressionResult = result.getData();
+            if (expressionResult == null || expressionResult.getExpression() == null) {
+                return new ExpressionDetectResult(false, null, "未检测到人脸", 0f);
+            }
+            return new ExpressionDetectResult(
+                    true,
+                    expressionResult.getExpression().getLabel(),
+                    expressionResult.getExpression().getDescription(),
+                    expressionResult.getScore()
+            );
+        } catch (Exception e) {
+            log.error("表情检测异常", e);
+            return new ExpressionDetectResult(false, null, "检测异常: " + e.getMessage(), 0f);
         }
     }
 

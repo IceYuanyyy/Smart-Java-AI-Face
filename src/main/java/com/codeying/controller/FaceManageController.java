@@ -219,6 +219,47 @@ public class FaceManageController {
     }
 
     /**
+     * 表情检测接口（上传单张图片识别表情）
+     * @param requestData 请求体，需包含 base64Image（Base64 编码的图片，可带 data:image/xxx;base64, 前缀）
+     * @return 表情检测结果：expressionLabel、expressionDescription、score、faceDetected
+     */
+    @ResponseBody
+    @PostMapping("/expression")
+    public ApiResponse<ExpressionDetectResult> expressionDetect(@RequestBody Map<String, String> requestData) {
+        try {
+            log.info("收到表情检测请求");
+
+            String base64Image = requestData.get("base64Image");
+            if (base64Image == null || base64Image.trim().isEmpty()) {
+                return ApiResponse.error("图片数据不能为空");
+            }
+
+            String base64Data = base64Image;
+            if (base64Image.contains(",")) {
+                base64Data = base64Image.substring(base64Image.indexOf(",") + 1);
+            }
+            byte[] imageBytes = Base64.getDecoder().decode(base64Data);
+
+            BufferedImage image;
+            try (ByteArrayInputStream bis = new ByteArrayInputStream(imageBytes)) {
+                image = ImageIO.read(bis);
+            }
+
+            if (image == null) {
+                return ApiResponse.error("图片格式无效");
+            }
+
+            ExpressionDetectResult result = FaceRecUtils.expressionDetect(image);
+            log.info("表情检测完成: label={}, score={}, faceDetected={}",
+                    result.getExpressionLabel(), result.getScore(), result.isFaceDetected());
+            return ApiResponse.success(result);
+        } catch (Exception e) {
+            log.error("表情检测失败", e);
+            return ApiResponse.error("表情检测失败: " + e.getMessage());
+        }
+    }
+
+    /**
      * 获取所有已注册人脸列表
      * @return 人脸信息列表
      */
