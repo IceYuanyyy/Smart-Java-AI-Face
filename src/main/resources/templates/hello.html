@@ -317,7 +317,7 @@
 
     <div class="instructions">
         <p>请正对摄像头，保持面部清晰</p>
-        <p>系统将在1秒内自动识别</p>
+        <p>系统将先进行活体检测和高兴表情检测，通过后自动识别</p>
     </div>
 
     <!-- 管理中心入口 -->
@@ -357,54 +357,133 @@
                 });
         }
 
-        // 开始人脸识别
+        // 开始人脸识别（先活體檢測，通過後才識別）
         function startRecognition() {
-            // 每秒执行一次识别
+            let isProcessing = false;  // 防止重疊請求
+
             const recognitionInterval = setInterval(() => {
+                if (isProcessing) return;
+
                 // 捕获当前视频帧
                 canvas.width = video.videoWidth;
                 canvas.height = video.videoHeight;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-                // 转换为Base64图片
                 const base64Image = canvas.toDataURL('image/jpeg', 0.8);
-
-                // 移除Base64前缀
                 const base64Data = base64Image.split(',')[1];
 
-                // 调用后端接口
-                fetch('/getInfoByFace', {
+                isProcessing = true;
+                status.textContent = '活體檢測中...';
+
+                // 第一步：活體檢測
+                fetch('/face/liveness', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ base64String: base64Data })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ base64Image: base64Image })
                 })
+                    .then(res => res.json())
+                    .then(livenessResult => {
+                        if (livenessResult.code !== 200 || !livenessResult.data) {
+                            status.textContent = '活體檢測失敗: ' + (livenessResult.message || '未知錯誤');
+                            status.classList.add('warning');
+                            status.classList.remove('success');
+                            isProcessing = false;
+                            return;
+                        }
+
+                        const data = livenessResult.data;
+                        if (!data.faceDetected) {
+                            status.textContent = '未檢測到人臉，請正對攝像頭';
+                            status.classList.add('warning');
+                            status.classList.remove('success');
+                            isProcessing = false;
+                            return;
+                        }
+
+                        if (!data.live) {
+                            status.textContent = '活體檢測未通過，請確保是真人 (分數: ' + (data.score || 0).toFixed(2) + ')';
+                            status.classList.add('warning');
+                            status.classList.remove('success');
+                            isProcessing = false;
+                            return;
+                        }
+
+                        // 第二步：表情檢測（必須 happy / 高兴）
+                        status.textContent = '活體通過，檢測表情中...';
+                        return fetch('/face/expression', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ base64Image: base64Image })
+                        });
+                    })
                     .then(response => {
+                        if (!response) return;  // 活體未通過時 response 為 undefined
+                        return response.json();
+                    })
+                    .then(expressionResult => {
+                        if (!expressionResult) return;
+                        if (expressionResult.code !== 200 || !expressionResult.data) {
+                            status.textContent = '表情檢測失敗: ' + (expressionResult.message || '未知錯誤');
+                            status.classList.add('warning');
+                            status.classList.remove('success');
+                            isProcessing = false;
+                            return;
+                        }
+
+                        const exp = expressionResult.data;
+                        if (!exp.faceDetected) {
+                            status.textContent = '未檢測到人臉，請正對攝像頭';
+                            status.classList.add('warning');
+                            status.classList.remove('success');
+                            isProcessing = false;
+                            return;
+                        }
+
+                        const isHappy = exp.expressionLabel === 'happy' || exp.expressionDescription === '高兴';
+                        if (!isHappy) {
+                            status.textContent = '請露出笑容（目前表情: ' + (exp.expressionDescription || exp.expressionLabel || '未知') + ')';
+                            status.classList.add('warning');
+                            status.classList.remove('success');
+                            isProcessing = false;
+                            return;
+                        }
+
+                        // 活體 + 高兴通過，進行人臉識別
+                        status.textContent = '活體與表情通過，識別中...';
+                        return fetch('/getInfoByFace', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ base64String: base64Data })
+                        });
+                    })
+                    .then(response => {
+                        if (!response) return;
                         return response.json();
                     })
                     .then(result => {
-                        console.log(result)
-                        // 检查识别结果
+                        isProcessing = false;
+                        if (!result) return;
+
                         if (result && result.metadata && result.similarity > 0.8) {
-                            // 跳转到成功页面
+                            status.textContent = '識別成功！';
+                            status.classList.add('success');
+                            status.classList.remove('warning');
                             window.location.href = '/success';
                         } else {
-                            // 更新状态
-                            status.textContent = '识别中... 未匹配到用户 (相似度: ' + (result?.similarity || 0).toFixed(2) + ')';
+                            status.textContent = '識別中... 未匹配到用戶 (相似度: ' + (result?.similarity || 0).toFixed(2) + ')';
                             status.classList.remove('success');
                             status.classList.add('warning');
                         }
                     })
                     .catch(error => {
-                        console.error('识别请求失败:', error);
-                        status.textContent = '人脸特征提取失败';
+                        isProcessing = false;
+                        console.error('識別請求失敗:', error);
+                        status.textContent = '請求失敗: ' + (error.message || '請重試');
                         status.classList.add('warning');
                     });
             }, 1000);
 
-            // 清理定时器（当页面跳转时）
             window.onbeforeunload = () => clearInterval(recognitionInterval);
         }
 
